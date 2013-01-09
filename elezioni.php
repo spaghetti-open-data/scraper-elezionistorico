@@ -153,7 +153,8 @@ function getUrls($url, $data) {
 	}
 	// pagina non trovata
 	else {
-		exit("<h1>ERRORE lettura pagina $url</h1>");
+		print "<h1>ERRORE lettura pagina $url</h1>";
+		printElapsedTime();
 	}
 	return;
 }
