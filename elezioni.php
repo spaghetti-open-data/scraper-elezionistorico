@@ -50,7 +50,7 @@ $start_url = $base_url."/index.php?tpel=C&dtel=13/04/2008";
 $page_num = 0;
 // max numero di pagine da leggere
 $max_page_num = 25;
-// max profondità
+// max profonditï¿½
 $max_depth = $_REQUEST['m']>0? $_REQUEST['m']: 5;
 ?><html>
 <head>
@@ -91,8 +91,8 @@ function getUrls($url, $data) {
 	$page_num++;
 	// raggiunto max numero di pagine?
 	if($page_num > $max_page_num) {
+		print "<h3>Raggiunto max numero di pagine</h3>";
 		printElapsedTime();
-		exit("<h3>Raggiunto max numero di pagine</h3>");
 	}
 	
 	// get pagina
@@ -123,7 +123,7 @@ function getUrls($url, $data) {
 		// qui bisogna inserire l'elaborazione dei dati della pagina
 		$data['content'] = $page->find(".dati_riepilogo") ? "[ Dati da elaborare ]": "[ Nessun dato da elaborare ]";
 
-		// se la pagina ha una sottosezione in più rispetto alla pagina parent -> prevede ulteriore dettaglio
+		// se la pagina ha una sottosezione in piï¿½ rispetto alla pagina parent -> prevede ulteriore dettaglio
 		if($data['depth'] > $prec_depth) {
 			// gli url delle pagine depth+1 sono in <div class="sezione">
 			if($sezione_urls = $page->find('div.sezione', 0)->find('a')) {
@@ -162,7 +162,7 @@ function preprint_r ($arg, $title=null) {
 	if($title) print "<h3><u>$title</u></h3>";
 	print "<pre>";
 	print_r($arg);
-	print "<hr></pre>";
+	print "</pre><hr>";
 }
 
 function printElapsedTime() {
@@ -171,4 +171,5 @@ function printElapsedTime() {
 	print "<h3>Elaborazione terminata<br>";
 	print "Tempo richiesto $et secondi<br>";
 	print "Tempo richiesto per pagina ".round($et/$page_num, 3)." secondi</h3>";
+	exit;
 }
