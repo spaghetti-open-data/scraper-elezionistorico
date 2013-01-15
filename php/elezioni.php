@@ -3,16 +3,16 @@ require_once "include/simplehtmldom/simple_html_dom.php";
 $base_url = "http://elezionistorico.interno.it";
 
 // questo url serve per test su elezioni con candidati + liste
-// $start_url = $base_url."/index.php?tpel=C&dtel=13/04/2008";
+$start_url = $base_url."/index.php?tpel=C&dtel=13/04/2008";
 
 // questo url serve per test su elezioni con uninominale+proporzionale
-$start_url = $base_url."/index.php?tpel=C&dtel=21/04/1996";
+// $start_url = $base_url."/index.php?tpel=C&dtel=21/04/1996";
 
 $page_num = 0;
-$max_page_num = 50;
+$max_page_num = 10;
 $max_depth = $_REQUEST['m']>0? $_REQUEST['m']: 5;
 
-// ob_start();
+ob_start();
 
 
 ?><html>
@@ -131,10 +131,11 @@ function getUrls($url, $data) {
 		// get dati di riepilogo, se presenti, altrimenti è una pagina "di passaggio"
 		$riepilogo = $page->find(".dati_riepilogo",0);
 		if($riepilogo) {
-			$data['elettori'] = preg_replace("#\.#", "", $riepilogo->find("[headers=helettori]", 0)->plaintext);
-			$data['votanti'] = preg_replace("#\.#", "", $riepilogo->find("[headers=hvotanti]", 0)->plaintext);
-			$data['bianche'] = preg_replace("#\.#", "", $riepilogo->find("[headers=hskbianche]", 0)->plaintext);
-			$data['nonvalide'] = preg_replace("#\.#", "", $riepilogo->find("[headers=hsknonvaliderER]", 0)->plaintext);
+			$data['elettori'] = norm_voto($riepilogo->find("[headers=helettori]", 0)->plaintext);
+			$data['votanti'] = norm_voto($riepilogo->find("[headers=hvotanti]", 0)->plaintext);
+			$data['bianche'] = norm_voto($riepilogo->find("[headers=hskbianche]", 0)->plaintext);
+			$data['nonvalide'] = norm_voto($riepilogo->find("[headers=hsknonvaliderER]", 0)->plaintext);
+			
 			$risultati = $page->find(".dati",0)->find("tr");
 			$candidato=null;
 			$data['candidati'] = array();
@@ -143,18 +144,41 @@ function getUrls($url, $data) {
 			for ($i=1, $max_i=count($risultati)-1; $i<$max_i; $i++) {
 				$r = $risultati[$i];
 				// riga candidato
-				if($r->find("[headers=hcandidato]")) {
+				if($r->find("[headers*=hcandidato]")) {
 					$candidato = $r->find("[headers=hcandidato]",0)->plaintext;
-					$data['candidati'][] = $candidato;
+					$eletto = $r->find(".eletto_index",0);
+					($voti_candidato = $r->find("[headers*=hvoti]",0)) ?
+						$data['candidati'][$candidato] = array('voti'=>norm_voto($voti_candidato->plaintext), 'eletto'=>(! empty($eletto))):
+						$data['candidati'][$candidato] = null;
 				}
-				// riga lista
+				// riga lista tipo 1
 				elseif ($lista = $r->find(".candidato",0)->plaintext) {
 					$data['liste'][$lista] = array(
-						'voti' => preg_replace('#\.#', '', $r->find("[headers*=hvoti]",0)->plaintext), 
+						'voti' => norm_voto($r->find("[headers*=hvoti]",0)->plaintext), 
 						'seggi' => $r->find("[headers*=hseggi]",0)->plaintext
 					);
 					if($img = $r->find('img',0)) $data['liste'][$lista]['img'] = array_pop(explode("?", $img->src));
 					if($candidato) $data['apparentamenti'][$lista] = $candidato;
+				}
+				// riga lista tipo 2
+				elseif ($span = $r->find("span[class=simbolo_lista]",0)) {
+					$rtds = $r->find("td");
+					foreach($rtds as $rtd) {
+						if($rtd_content = trim($rtd->innertext)) {
+						// possono esserci varie righe di questo tipo in una sola <td>
+						// <span class='simbolo_lista'><img src="imgContrassegno.php?tpel=C&amp;dtel=21/04/1996&amp;tpa=I&amp;tpe=L&amp;ne=101&amp;tpseg=L&amp;ncl=1&amp;ccp=1472" title="L'ULIVO" alt="L'ULIVO"/></span>&nbsp;L'ULIVO&nbsp;&nbsp;
+							preg_match_all('#<span class=.*?simbolo_lista.+?src="([^"]+?)".+?\&nbsp\;(.+?)\&nbsp#is', $rtd_content, $liste);
+							for($l=0, $max_l=count($liste[0]); $l<$max_l;$l++) {
+								$lista = preg_replace('#,$#', '', trim($liste[2][$l]));
+								$data['liste'][$lista] = array(
+									'img' => array_pop(explode("?", $liste[1][$l]))
+								);
+								if($r->find("[headers*=hvoti]",0)) $data['liste'][$lista]['voti'] = norm_voto($r->find("[headers*=hvoti]",0)->plaintext);
+								if($r->find("[headers*=hseggi]",0)) $data['liste'][$lista]['seggi'] = $r->find("[headers*=hseggi]",0)->plaintext;
+								if($candidato) $data['apparentamenti'][$lista] = $candidato;
+							}
+						}
+					}
 				}
 			}
 		}
@@ -200,6 +224,10 @@ function getUrls($url, $data) {
 		endExec("ERRORE lettura pagina $url");
 	}
 	return;
+}
+
+function norm_voto($v) {
+	return preg_replace('#\.#', '', $v);
 }
 
 function preprint_r ($arg, $title=null) {
