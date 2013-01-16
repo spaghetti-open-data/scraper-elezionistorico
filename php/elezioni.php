@@ -1,20 +1,7 @@
 <?php
 require_once "include/simplehtmldom/simple_html_dom.php";
 $base_url = "http://elezionistorico.interno.it";
-
-// questo url serve per test su elezioni con candidati + liste
-$start_url = $base_url."/index.php?tpel=C&dtel=13/04/2008";
-
-// questo url serve per test su elezioni con uninominale+proporzionale
-// $start_url = $base_url."/index.php?tpel=C&dtel=21/04/1996";
-
-$page_num = 0;
-$max_page_num = 10;
-$max_depth = $_REQUEST['m']>0? $_REQUEST['m']: 5;
-
 ob_start();
-
-
 ?><html>
 <head>
 <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
@@ -37,17 +24,51 @@ h3 {
 </style>
 </head> 
 <body>
-<h1>Esempio di scraper per lettura dati elettorali<br>Parametri di elaborazione</h1>
-<h3>Pagina root: <?= $start_url ?><br>
+<h1>Esempio di scraper per lettura dati elettorali - Camera</h1>
+<?
+if(empty($_GET['d'])) {
+?>
+<h1>Scegli una data</h1>
+<ul>
+<li><a href="elezioni.php?d=13/04/2008">13/04/2008 (candidati e coalizioni)</a></li>
+<li><a href="elezioni.php?d=09/04/2006">09/04/2006 (candidati e coalizioni)</a></li>
+<li><a href="elezioni.php?d=13/05/2001">13/05/2001 (uninominale/proporzionale)</a></li>
+<li><a href="elezioni.php?d=21/04/1996">21/04/1996 (uninominale/proporzionale)</a></li>
+<li><a href="elezioni.php?d=27/03/1994">27/03/1994 (uninominale/proporzionale)</a></li>
+<li><a href="elezioni.php?d=05/04/1992">05/04/1992 (liste)</a></li>
+<li><a href="elezioni.php?d=14/06/1987">14/06/1987 (liste)</a></li>
+<li><a href="elezioni.php?d=26/06/1983">26/06/1983 (liste)</a></li>
+<li><a href="elezioni.php?d=03/06/1979">03/06/1979 (liste)</a></li>
+<li><a href="elezioni.php?d=20/06/1976">20/06/1976 (liste)</a></li>
+<li><a href="elezioni.php?d=07/05/1972">07/05/1972 (liste)</a></li>
+<li><a href="elezioni.php?d=19/05/1968">19/05/1968 (liste)</a></li>
+<li><a href="elezioni.php?d=28/04/1963">28/04/1963 (liste)</a></li>
+<li><a href="elezioni.php?d=25/05/1958">25/05/1958 (liste)</a></li>
+<li><a href="elezioni.php?d=07/06/1953">07/06/1953 (liste)</a></li>
+<li><a href="elezioni.php?d=18/04/1948">18/04/1948 (liste)</a></li>
+</ul>
+<?
+exit;
+}
+else {
+	$start_url = $base_url."/index.php?tpel=C&dtel=".$_GET['d'];
+	$page_num = 0;
+	$max_page_num = 20;
+	$max_depth = $_REQUEST['m']>0? $_REQUEST['m']: 5;
+	
+?>
+<br>Parametri di elaborazione</h1>
+<h3>Pagina root: <a href="<?= $start_url ?>" target="_blank"><?= $start_url ?></a><br>
 Massimo numero di pagine: <?= $max_page_num ?><br>
 Massima profondit&agrave;: <?= $max_depth ?> - questo parametro pu&ograve; essere modificato aggiungendo "?m=numero&gt;0" all'indirizzo di questo script
 </h3><hr>
 <?
+}
 // parametri
 $data = array(
 	'root' => array(
 		'tipo'=>'C',
-		'data' => '13/04/2008'
+		'data' => $_GET['d']
 	),
 	'unipro' => null,
 	'arg' => null,
@@ -104,7 +125,7 @@ function getUrls($url, $data) {
 	}
 	
 	// get pagina
-	$page = file_get_html($url);
+	$page = file_get_html($url)->find("body",0);
 	
 	// se caricato contenuto
 	if($page) {
@@ -212,7 +233,6 @@ function getUrls($url, $data) {
 			}
 		}
 		else {
-			// $data['children'] = 0;
 			preprint_r($data, "$page_num) $title");
 		}
 		// no memory leaks!
@@ -230,10 +250,10 @@ function norm_voto($v) {
 	return preg_replace('#\.#', '', $v);
 }
 
-function preprint_r ($arg, $title=null) {
+function preprint_r ($a, $title=null) {
 	if($title) print "<h3><u>$title</u></h3>";
 	print "<pre>";
-	$arg['liste'] ? print_r($arg) : print "Pagina senza dati";
+	$a['liste'] ? print_r($a) : print "Pagina senza dati";
 	print "</pre><hr>";
 	ob_flush();
 	flush();
@@ -244,9 +264,9 @@ function endExec($msg=null) {
 	$et = time() - $start_time;
 	print ($msg ? "<h3>$msg<br>" : "<h3>"). "Elaborazione terminata<br>";
 	print "Tempo richiesto $et secondi<br>";
-	print "Tempo richiesto per pagina ".round($et/$page_num, 3)." secondi</h3>";
+	print "Tempo richiesto per pagina ".round($et/$page_num, 3)." secondi<br>";
+	print '<a href="elezioni.php">Nuova ricerca</a></h3>';
 	ob_flush();
-
 	exit;
 }
 ?>
