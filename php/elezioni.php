@@ -1,4 +1,5 @@
 <?php
+set_time_limit(0);
 require_once "include/simplehtmldom/simple_html_dom.php";
 $base_url = "http://elezionistorico.interno.it";
 ob_start();
@@ -22,7 +23,7 @@ h3 {
 	font-size: 10pt;
 }
 </style>
-</head> 
+</head>
 <body>
 <h1>Esempio di scraper per lettura dati elettorali - Camera</h1>
 <?
@@ -53,11 +54,10 @@ exit;
 else {
 	$start_url = $base_url."/index.php?tpel=C&dtel=".$_GET['d'];
 	$page_num = 0;
-	$max_page_num = 20;
-	$max_depth = $_REQUEST['m']>0? $_REQUEST['m']: 5;
-	
+	$max_page_num = 200;
+	$max_depth = $_REQUEST['m']>0? $_REQUEST['m']: 2;
 ?>
-<br>Parametri di elaborazione</h1>
+<h1>Parametri di elaborazione</h1>
 <h3>Pagina root: <a href="<?= $start_url ?>" target="_blank"><?= $start_url ?></a><br>
 Massimo numero di pagine: <?= $max_page_num ?><br>
 Massima profondit&agrave;: <?= $max_depth ?> - questo parametro pu&ograve; essere modificato aggiungendo "?m=numero&gt;0" all'indirizzo di questo script
@@ -79,7 +79,7 @@ $data = array(
 $livelli=array(
 	// italia, italia escluse regioni
 	"I" => array(
-		'area', 
+		'area',
 		'circoscrizione',
 		'regione',
 		'provincia',
@@ -87,21 +87,21 @@ $livelli=array(
 	),
 	// valle d'aosta
 	"H" => array(
-		'area', 
+		'area',
 		'circoscrizione',
 		'provincia',
 		'comune'
 	),
 	// valle d'aosta + trentino
 	"G" => array(
-		'area', 
+		'area',
 		'regione',
 		'collegio',
 		'comune'
 	),
 	// estero
 	"E" => array(
-		'area', 
+		'area',
 		'circoscrizione',
 		'ripartizione',
 		'nazione',
@@ -111,31 +111,46 @@ $livelli=array(
 
 
 // start elaborazione
-set_time_limit(0);
 $start_time = time();
-getUrls($start_url, $data);
+$fout = fopen("candidati.csv","w");
+
+getUrls($start_url, array(), -1);
 endExec();
 
-function getUrls($url, $data) {
+function getUrls($url, $liv, $prec_depth) {
 	global $base_url, $page_num, $max_page_num, $max_depth, $livelli;
+	$data = array(
+		'root' => array(
+			'tipo'=>'C',
+			'data' => $_GET['d']
+		)
+	);
 	$page_num++;
+
 	// raggiunto max numero di pagine?
 	if($page_num > $max_page_num) {
 		endExec("Raggiunto max numero di pagine");
 	}
-	
-	// get pagina
-	$page = file_get_html($url)->find("body",0);
-	
-	// se caricato contenuto
-	if($page) {
+
+	// get file
+	$f = file_get_html($url);
+	if($f) {
+		$page = $f->find("body",0);
+		print "memory usage ".memory_get_usage ().'<br>';
+
 		// set depth
-		$prec_depth = $data['depth'];
-		$data['depth'] = count($page->find("div.sezione_panel"))-1;
-		
+		$depth = count($page->find("div.sezione_panel"))-1;
+
 		// elabora dati della pagina
 		$title = $page->find("div.titolo_pagina", 0)->plaintext;
 
+		// se utilizzato il sistema uninominale/proporzionale la pagina di default è "proporzionale"
+		// in questo caso legge la pagina "uninominale", che è allo stesso livello di profondità -> non genera ricorsione
+		$unipro = ($page->find(".unipro",0) ? $page->find(".unipro",0): null);
+
+		// dati riepilogo
+		$riepilogo = ($page->find(".dati_riepilogo",0) ? $page->find(".dati_riepilogo",0) : null);
+		// gli url delle pagine depth+1 sono in <div class="sezione">
 		// split argomenti passati alla pagina
 		$data['arg'] = array();
 		$arg = explode("&", array_pop(explode("?", $url)));
@@ -148,34 +163,34 @@ function getUrls($url, $data) {
 		foreach($livelli[$data['arg']['tpa']] as $label) {
 			$data['liv'][$label] = (preg_match("#$label (.+?)($| \|)#i", $title, $m) ? $m[1]: null);
 		}
-		
+
 		// get dati di riepilogo, se presenti, altrimenti è una pagina "di passaggio"
-		$riepilogo = $page->find(".dati_riepilogo",0);
 		if($riepilogo) {
 			$data['elettori'] = norm_voto($riepilogo->find("[headers=helettori]", 0)->plaintext);
 			$data['votanti'] = norm_voto($riepilogo->find("[headers=hvotanti]", 0)->plaintext);
 			$data['bianche'] = norm_voto($riepilogo->find("[headers=hskbianche]", 0)->plaintext);
 			$data['nonvalide'] = norm_voto($riepilogo->find("[headers=hsknonvaliderER]", 0)->plaintext);
-			
-			$risultati = $page->find(".dati",0)->find("tr");
+
+			$sez_dati = $page->find(".dati",0);
 			$candidato=null;
 			$data['candidati'] = array();
 			$data['liste'] = array();
 			$data['apparentamenti'] = array();
-			for ($i=1, $max_i=count($risultati)-1; $i<$max_i; $i++) {
-				$r = $risultati[$i];
+			for ($i=1, $max_i=count($sez_dati->find("tr"))-1; $i<$max_i; $i++) {
+				$r = $sez_dati->find("tr", $i);
 				// riga candidato
 				if($r->find("[headers*=hcandidato]")) {
 					$candidato = $r->find("[headers=hcandidato]",0)->plaintext;
-					$eletto = $r->find(".eletto_index",0);
-					($voti_candidato = $r->find("[headers*=hvoti]",0)) ?
-						$data['candidati'][$candidato] = array('voti'=>norm_voto($voti_candidato->plaintext), 'eletto'=>(! empty($eletto))):
+					$eletto = trim($r->find(".eletto_index",0))? 0:1;
+					($r->find("[headers*=hvoti]",0)) ?
+						$data['candidati'][$candidato] = array('voti'=>norm_voto($r->find("[headers*=hvoti]",0)->plaintext), 'eletto'=>$eletto):
 						$data['candidati'][$candidato] = null;
 				}
 				// riga lista tipo 1
-				elseif ($lista = $r->find(".candidato",0)->plaintext) {
+				elseif ($lista_el = $r->find(".candidato",0)) {
+					$lista = $lista_el->plaintext;
 					$data['liste'][$lista] = array(
-						'voti' => norm_voto($r->find("[headers*=hvoti]",0)->plaintext), 
+						'voti' => norm_voto($r->find("[headers*=hvoti]",0)->plaintext),
 						'seggi' => $r->find("[headers*=hseggi]",0)->plaintext
 					);
 					if($img = $r->find('img',0)) $data['liste'][$lista]['img'] = array_pop(explode("?", $img->src));
@@ -201,29 +216,52 @@ function getUrls($url, $data) {
 						}
 					}
 				}
+				$r->clear();
+				unset($r);
 			}
+			$sez_dati->clear();
+			unset($sez_dati);
+			$riepilogo->clear();
 		}
+		unset($riepilogo);
 
-		// se utilizzato il sistema uninominale/proporzionale la pagina di default è "proporzionale" 
-		// in questo caso legge la pagina "uninominale", che è allo stesso livello di profondità -> non genera ricorsione
-		$unipro = $page->find(".unipro",0);
 		if( $unipro ) {
 			$data['unipro'] = $unipro->find(".activelink",0)->plaintext;
-			if($data['unipro'] == 'Proporzionale') getUrls($base_url.htmlspecialchars_decode($unipro->find("a[title=Uninominale]",0)->href), $data);
+			if($data['unipro'] == 'Proporzionale') getUrls($base_url.htmlspecialchars_decode($unipro->find("a[title=Uninominale]",0)->href), $depth);
+			$unipro->clear();
 		}
-		
+		unset($unipro);
+
+		// gli url delle pagine depth+1 sono in <div class="sezione">
+		$sez = $page->find('div.sezione', 0);
+		if($sez) {
+			$sezione_urls = $sez->find('a');
+			$sub_urls = array();
+			foreach($sezione_urls as $sezione_url) {
+				$sub_urls[] = $base_url.htmlspecialchars_decode($sezione_url->href);
+				$sezione_url->clear();
+				unset($sezione_url);
+			}
+		}
+		unset($sezione_urls);
+		$sez->clear();
+		unset($sez);
+		$page->clear();
+		unset($page);
+		$f->clear();
+		unset($f);
+
 		// se la pagina ha una sottosezione in più rispetto alla pagina parent -> prevede ulteriore dettaglio
-		if($data['depth'] > $prec_depth) {
+		if($depth > $prec_depth) {
 			// gli url delle pagine depth+1 sono in <div class="sezione">
-			if($sezione_urls = $page->find('div.sezione', 0)->find('a')) {
-				// $data['children'] = count($sezione_urls);
+			if($sub_urls) {
 				// stampa i dati prima della recursion
 				preprint_r($data, "$page_num) $title");
-
+				unset($data);
 				// recursion
-				if ($data['depth'] < $max_depth) {
-					foreach($sezione_urls as $sezione_url) {
-						getUrls($base_url.htmlspecialchars_decode($sezione_url->href), $data);
+				if ($depth < $max_depth) {
+					foreach($sub_urls as $sub_url) {
+						getUrls($sub_url, $data['liv'], $depth);
 					}
 				}
 			}
@@ -234,10 +272,8 @@ function getUrls($url, $data) {
 		}
 		else {
 			preprint_r($data, "$page_num) $title");
+			unset($data);
 		}
-		// no memory leaks!
-		$page->clear();
-		unset($page);
 	}
 	// pagina non trovata
 	else {
@@ -250,6 +286,10 @@ function norm_voto($v) {
 	return preg_replace('#\.#', '', $v);
 }
 
+function norm_data($d) {
+	return preg_replace('#^(\d\d)\.(\d\d)\.(\d\d\d\d)$#', "$3$2$1", $d);
+}
+
 function preprint_r ($a, $title=null) {
 	if($title) print "<h3><u>$title</u></h3>";
 	print "<pre>";
@@ -260,13 +300,14 @@ function preprint_r ($a, $title=null) {
 }
 
 function endExec($msg=null) {
-	global $start_time, $page_num;
+	global $start_time, $page_num, $fout;
 	$et = time() - $start_time;
 	print ($msg ? "<h3>$msg<br>" : "<h3>"). "Elaborazione terminata<br>";
 	print "Tempo richiesto $et secondi<br>";
 	print "Tempo richiesto per pagina ".round($et/$page_num, 3)." secondi<br>";
 	print '<a href="elezioni.php">Nuova ricerca</a></h3>';
 	ob_flush();
+	fclose($fout);
 	exit;
 }
 ?>
